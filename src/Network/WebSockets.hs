@@ -101,6 +101,7 @@ module Network.WebSockets
       -- * A simple standalone server
     , I.runServer
     , I.runWithSocket
+    , I.runWithChans
 
       -- * Types
     , I.Headers
@@ -164,6 +165,7 @@ import qualified Network.WebSockets.Protocol.Hybi10 as I
 import qualified Network.WebSockets.Protocol.Hybi17 as I
 import qualified Network.WebSockets.Protocol.Unsafe as Unsafe
 import qualified Network.WebSockets.Socket as I
+import qualified Network.WebSockets.Chan as I
 import qualified Network.WebSockets.Types as I
 
 -- This doesn't work this way any more. As the Protocol first has to be
