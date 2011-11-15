@@ -45,6 +45,7 @@ Library
 
   Exposed-modules:
     Network.WebSockets
+    Network.WebSockets.Chan
 
   Other-modules:
     Network.WebSockets.Demultiplex
