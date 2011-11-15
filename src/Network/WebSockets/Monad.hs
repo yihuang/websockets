@@ -4,6 +4,7 @@
 module Network.WebSockets.Monad
     ( WebSocketsOptions (..)
     , defaultWebSocketsOptions
+    , WebSocketsEnv (..)
     , WebSockets (..)
     , runWebSockets
     , runWebSocketsWith
