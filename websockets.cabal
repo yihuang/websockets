@@ -45,7 +45,7 @@ Library
 
   Exposed-modules:
     Network.WebSockets
-    Network.WebSockets.Chan
+    Network.WebSockets.Emulate
 
   Other-modules:
     Network.WebSockets.Demultiplex
@@ -60,6 +60,7 @@ Library
     Network.WebSockets.Protocol.Hybi10
     Network.WebSockets.Protocol.Hybi10.Internal
     Network.WebSockets.Protocol.Unsafe
+    Network.WebSockets.Protocol.Emulate
     Network.WebSockets.Socket
     Network.WebSockets.Types
 
