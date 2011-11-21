@@ -14,7 +14,8 @@ instance Protocol EmulateProtocol where
     headerVersion _ = "sockjs"
     encodeFrame _ = encodeFrame Hybi10_
     decodeFrame _ = decodeFrame Hybi10_
-    finishRequest _ (RequestHttpPart path hs) = return $ Right $ Request path hs (Response 101 "" [] "")
+    finishRequest _ (RequestHttpPart path hs) = return $ Right $ Request path hs (response101
+                        [] "o\n" )
     implementations = [EmulateProtocol]
 
 instance TextProtocol EmulateProtocol
