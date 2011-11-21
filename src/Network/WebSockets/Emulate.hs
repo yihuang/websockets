@@ -9,14 +9,13 @@ module Network.WebSockets.Emulate
   , decodeFrame
   ) where
 
+import Prelude hiding (catch)
 import Data.ByteString (ByteString)
 import Data.Enumerator
+import Control.Exception
 import Control.Concurrent.Chan
-import Blaze.ByteString.Builder
-import Control.Monad.Reader (runReaderT)
-import Control.Monad.State (evalStateT)
+import Network.WebSockets.Handshake.Http (Request, RequestHttpPart)
 import Network.WebSockets.Monad
-import Network.WebSockets.Demultiplex (emptyDemultiplexState)
 import Network.WebSockets.Protocol
 import Network.WebSockets.Protocol.Emulate (EmulateProtocol(..))
 import Control.Monad.Trans (liftIO)
@@ -34,12 +33,9 @@ enumChan ch = checkContinue0 $ \loop f -> do
     stream <- liftIO $ readChan ch
     f stream >>== loop
 
-runEmulator :: StreamChan ByteString -> StreamChan ByteString -> WebSockets EmulateProtocol a -> IO a
-runEmulator inChan outChan ws = do
-    let sender x = writeChan outChan (Chunks [toByteString x])
-        env      = WebSocketsEnv defaultWebSocketsOptions sender EmulateProtocol
-        state    = runReaderT (unWebSockets ws) env
-        iter     = evalStateT state emptyDemultiplexState
-    r <- run $ enumChan inChan $$ iter
-    writeChan outChan EOF
+runEmulator :: StreamChan ByteString -> StreamChan ByteString -> RequestHttpPart -> (Request -> WebSockets EmulateProtocol a) -> IO a
+runEmulator inChan outChan req app = do
+    r <- (run $ enumChan inChan $$ runWebSockets req app $ iterChan outChan)
+           `catch` (ioError)
+           `finally` (writeChan outChan EOF)
     either (error . show) return r
