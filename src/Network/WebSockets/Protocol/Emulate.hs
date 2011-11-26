@@ -4,7 +4,7 @@ module Network.WebSockets.Protocol.Emulate
   ) where
 
 import Network.WebSockets.Protocol
-import Network.WebSockets.Protocol.Hybi10 (Hybi10_(Hybi10_))
+import Network.WebSockets.Protocol.Hybi10.Internal (Hybi10_(Hybi10_))
 import Network.WebSockets.Handshake.Http
 
 data EmulateProtocol = EmulateProtocol
