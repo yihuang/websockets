@@ -83,7 +83,8 @@ Library
     random                   >= 1.0    && < 1.1,
     SHA                      >= 1.5    && < 1.6,
     text                     >= 0.10   && < 0.12,
-    pureMD5                  >= 0.2.2  && < 2.2
+    pureMD5                  >= 0.2.2  && < 2.2,
+    stm                      >= 2.2    && < 2.3
 
 Source-repository head
   Type:     git
