@@ -115,7 +115,7 @@ encodeFrameHybi10 mask f = B.fromWord8 byte0 `mappend`
 handshakeHybi10 :: RequestHttpPart -> Decoder p (Either HandshakeError Request)
 handshakeHybi10 reqHttp@(RequestHttpPart path h) = return $ do
     case getHeader "Sec-WebSocket-Version" of
-        Right "8" -> return ()
+        Right v | v=="7" || v=="8" || v=="13" -> return ()
         _         -> throwError NotSupported
     key <- getHeader "Sec-WebSocket-Key"
     let hash = unlazy $ bytestringDigest $ sha1 $ lazy $ key `mappend` guid
