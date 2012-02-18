@@ -1,5 +1,9 @@
 Name:    websockets
+<<<<<<< HEAD
 Version: 0.6.0.2
+=======
+Version: 0.6.0.0
+>>>>>>> migrate from enumerator to conduit.
 
 Synopsis:
   A sensible and clean way to write WebSocket-capable servers in Haskell.
@@ -44,14 +48,11 @@ Library
   Ghc-options:    -Wall
 
   Exposed-modules:
-    Network.WebSockets
-    Network.WebSockets.Internal
-    Network.WebSockets.Util.PubSub
+    Network.WebSockets.Conduit
 
   Other-modules:
     Network.WebSockets.Handshake
     Network.WebSockets.Handshake.Http
-    Network.WebSockets.Monad
     Network.WebSockets.Protocol
     Network.WebSockets.Protocol.Hybi00
     Network.WebSockets.Protocol.Hybi00.Internal
@@ -60,28 +61,31 @@ Library
     Network.WebSockets.Protocol.Hybi10.Internal
     Network.WebSockets.Protocol.Hybi10.Mask
     Network.WebSockets.Protocol.Unsafe
-    Network.WebSockets.Socket
     Network.WebSockets.Types
 
   Build-depends:
     attoparsec               >= 0.9    && < 0.11,
-    attoparsec-enumerator    >= 0.2    && < 0.4,
+    attoparsec-conduit       >= 0.2.0,
     base                     >= 4      && < 5,
     base64-bytestring        >= 0.1    && < 0.2,
     binary                   >= 0.5    && < 0.6,
     blaze-builder            >= 0.3    && < 0.4,
-    blaze-builder-enumerator >= 0.2    && < 0.3,
+    blaze-builder-conduit    >= 0.2.0,
     bytestring               >= 0.9    && < 0.10,
     case-insensitive         >= 0.3    && < 0.5,
     containers               >= 0.3    && < 0.5,
-    enumerator               >= 0.4.13 && < 0.5,
+    conduit                  >= 0.2.0,
     mtl                      >= 2.0    && < 2.2,
     network                  >= 2.3    && < 2.4,
-    network-enumerator       >= 0.1    && < 0.2,
+    network-conduit          >= 0.2.0,
     random                   >= 1.0    && < 1.1,
     SHA                      >= 1.5    && < 1.6,
     text                     >= 0.10   && < 0.12,
-    pureMD5                  >= 0.2.2  && < 2.2
+    pureMD5                  >= 0.2.2  && < 2.2,
+    lifted-base >= 0.1.0,
+    transformers >= 0.2.0,
+    wai  >= 1.1.0,
+    warp >= 1.1.0
 
 Test-suite websockets-tests
   Type:           exitcode-stdio-1.0
@@ -113,7 +117,11 @@ Test-suite websockets-tests
     random                   >= 1.0    && < 1.1,
     SHA                      >= 1.5    && < 1.6,
     text                     >= 0.10   && < 0.12,
-    pureMD5                  >= 0.2.2  && < 2.2
+    pureMD5                  >= 0.2.2  && < 2.2,
+    lifted-base >= 0.1.0,
+    transformers >= 0.2.0,
+    wai  >= 1.1.0,
+    warp >= 1.1.0
 
 Source-repository head
   Type:     git

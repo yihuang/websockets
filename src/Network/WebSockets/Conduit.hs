@@ -1,0 +1,104 @@
+{-# LANGUAGE OverloadedStrings, ScopedTypeVariables #-}
+module Network.WebSockets.Conduit
+  ( intercept
+  , Application
+  , WebSocketsOptions(..)
+  , WS.Request(..)
+  , WS.Hybi00
+  , WS.Hybi10
+  ) where
+import System.Random (newStdGen)
+import Control.Monad.IO.Class (liftIO)
+import Control.Exception (throwIO)
+import qualified Control.Exception.Lifted as Lifted
+
+import Data.Char (toLower)
+import Data.Monoid
+import Data.Conduit ( ($$), (=$), ($=) )
+import Data.ByteString (ByteString)
+import qualified Data.ByteString.Char8 as S
+import qualified Data.Conduit as C
+import qualified Data.Conduit.List as CL
+import Data.Conduit.Blaze (builderToByteString)
+import qualified Blaze.ByteString.Builder as B
+import Data.Conduit.SharedSink (SharedSink, newSharedSink, wrapSharedSink, pushSharedSink)
+
+import Network.Wai.Handler.Warp (Connection(..))
+import Network.Wai hiding (Application)
+import qualified Network.WebSockets.Handshake.Http as WS
+import qualified Network.WebSockets.Handshake as WS
+import qualified Network.WebSockets.Types as WS
+import qualified Network.WebSockets.Protocol as WS
+import qualified Network.WebSockets.Protocol.Hybi10 as WS
+import qualified Network.WebSockets.Protocol.Hybi00 as WS
+import qualified Network.WebSockets.Protocol.Unsafe as Unsafe
+
+type Application str = C.Source IO str -> C.Sink str IO () -> C.ResourceT IO ()
+
+data WebSocketsOptions = WebSocketsOptions
+    { onPong       :: IO ()
+    }
+
+connSink :: Connection -> C.Sink ByteString IO ()
+connSink conn = C.SinkData push close
+  where
+    push x = liftIO (connSendAll conn x) >> return (C.Processing push close)
+    close = return ()
+
+handleControlMessage :: (WS.TextProtocol p, WS.WebSocketsData str)
+                     => WebSocketsOptions
+                     -> SharedSink (WS.Message p) IO
+                     -> C.Conduit (WS.Message p) IO str
+handleControlMessage opt sharedSink = CL.concatMapM step
+  where step msg = case msg of
+            (WS.DataMessage am) -> return . (:[]) $ case am of
+                WS.Text s -> WS.fromLazyByteString s
+                WS.Binary s -> WS.fromLazyByteString s
+            (WS.ControlMessage cm) -> case cm of
+                WS.Close _ -> throwIO WS.ConnectionClosed
+                WS.Pong _ -> onPong opt >> return []
+                WS.Ping pl -> pushSharedSink sharedSink (Unsafe.pong pl) >> return []
+
+autoFlush :: Monad m => C.Conduit B.Builder m B.Builder
+autoFlush = CL.map (`mappend` B.flush)
+
+runWebSockets :: (WS.TextProtocol p, WS.WebSocketsData str)
+              => p
+              -> WebSocketsOptions
+              -> Application str
+              -> C.BufferedSource IO ByteString
+              -> C.Sink ByteString IO ()
+              -> C.ResourceT IO ()
+runWebSockets p opts app src snk = do
+    gen <- liftIO newStdGen
+    let msgSink = WS.encodeMessages p gen =$ autoFlush =$ builderToByteString =$ snk
+    sharedSink <- liftIO $ newSharedSink msgSink
+    let src' = src $= WS.decodeMessages p $= handleControlMessage opts sharedSink
+        snk' = CL.map WS.textData =$ wrapSharedSink sharedSink
+    app src' snk'
+
+intercept :: forall p str. (WS.TextProtocol p, WS.WebSocketsData str)
+          => p
+          -> WebSocketsOptions
+          -> (WS.Request -> Application str)
+          -> Request
+          -> Maybe (C.BufferedSource IO ByteString -> Connection -> C.ResourceT IO ())
+intercept _ opts app req =
+    case lookup "upgrade" (requestHeaders req) of
+        Just s
+            | S.map toLower s == "websocket" ->
+                Just $ \src conn -> do
+                    (req', (p::p)) <- handshake' src conn
+                    runWebSockets p opts (app req') src (connSink conn)
+            | otherwise                      -> Nothing
+        _                                    -> Nothing
+  where
+    part = WS.RequestHttpPart (rawPathInfo req) (requestHeaders req)
+    sendRsp conn = liftIO . connSendAll conn . B.toByteString . WS.encodeResponse
+    handshake' src conn = do
+        (req', p) <- (src $$ WS.handshake part) `Lifted.catch`
+                       (\e -> do sendRsp conn $ WS.responseError (undefined::p) e
+                                 Lifted.throwIO e
+                       )
+        sendRsp conn $ WS.requestResponse req'
+        return (req', p)

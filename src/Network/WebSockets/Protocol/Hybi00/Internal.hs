@@ -5,6 +5,8 @@ module Network.WebSockets.Protocol.Hybi00.Internal
        ) where
 
 import Control.Applicative ((<|>))
+import Control.Monad.Trans (lift)
+import Control.Monad.Trans.Resource ( ResourceThrow(resourceThrow) )
 import Data.Char (isDigit)
 
 import Data.Binary (encode)
@@ -12,10 +14,10 @@ import Data.Digest.Pure.MD5 (md5)
 import Data.Int (Int32)
 import qualified Blaze.ByteString.Builder as BB
 import qualified Data.Attoparsec as A
-import qualified Data.Attoparsec.Enumerator as A
+import qualified Data.Conduit.Attoparsec as A
 import qualified Data.ByteString as B
-import qualified Data.Enumerator as E
-import qualified Data.Enumerator.List as EL
+import qualified Data.Conduit as C
+import qualified Data.Conduit.List as CL
 import qualified Data.ByteString.Char8 as BC
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.CaseInsensitive as CI
@@ -30,8 +32,8 @@ instance Protocol Hybi00_ where
     version         Hybi00_   = "hybi00"
     headerVersions  Hybi00_   = []  -- The client will elide it
     supported       Hybi00_ h = getSecWebSocketVersion h == Nothing
-    encodeMessages  Hybi00_   = EL.map encodeMessage
-    decodeMessages  Hybi00_   = E.sequence (A.iterParser parseMessage)
+    encodeMessages  Hybi00_   = CL.map encodeMessage
+    decodeMessages  Hybi00_   = C.sequence (A.sinkParser parseMessage)
     finishRequest   Hybi00_   = handshakeHybi00
     implementations           = [Hybi00_]
 
@@ -67,11 +69,11 @@ divBySpaces str
     number = read $ filter isDigit str :: Integer
     spaces = fromIntegral . length $ filter (== ' ') str
 
-handshakeHybi00 :: Monad m
+handshakeHybi00 :: ResourceThrow m
                 => RequestHttpPart
-                -> E.Iteratee B.ByteString m Request
+                -> C.Sink B.ByteString m Request
 handshakeHybi00 reqHttp@(RequestHttpPart path h isSecure) = do
-    keyPart3 <- A.iterParser $ A.take 8
+    keyPart3 <- A.sinkParser $ A.take 8
     keyPart1 <- numberFromToken =<< getHeader "Sec-WebSocket-Key1"
     keyPart2 <- numberFromToken =<< getHeader "Sec-WebSocket-Key2"
 
@@ -92,10 +94,10 @@ handshakeHybi00 reqHttp@(RequestHttpPart path h isSecure) = do
   where
     getHeader k = case lookup k h of
         Just t  -> return t
-        Nothing -> E.throwError $ MalformedRequest reqHttp $
+        Nothing -> lift . resourceThrow $ MalformedRequest reqHttp $
             "Header missing: " ++ BC.unpack (CI.original k)
 
     numberFromToken token = case divBySpaces (BC.unpack token) of
         Just n  -> return $ encode n
-        Nothing -> E.throwError $ MalformedRequest reqHttp
+        Nothing -> lift . resourceThrow $ MalformedRequest reqHttp
             "Security token does not contain enough spaces"

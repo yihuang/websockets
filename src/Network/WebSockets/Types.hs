@@ -14,7 +14,7 @@ module Network.WebSockets.Types
 import Control.Exception (Exception(..))
 import Data.Typeable (Typeable)
 
-import qualified Data.Attoparsec.Enumerator as AE
+import qualified Data.Conduit.Attoparsec as AC
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Text as T
@@ -25,7 +25,7 @@ import qualified Data.Text.Lazy.Encoding as TL
 -- as an iteratee exception.
 data ConnectionError
     -- | The client sent malformed data.
-    = ParseError AE.ParseError
+    = ParseError AC.ParseError
     -- | the client closed the connection while
     -- we were trying to receive some data.
     --

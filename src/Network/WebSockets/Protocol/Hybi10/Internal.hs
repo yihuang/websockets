@@ -5,6 +5,8 @@ module Network.WebSockets.Protocol.Hybi10.Internal
     ) where
 
 import Control.Applicative (pure, (<$>))
+import Control.Monad.Trans (lift)
+import Control.Monad.Trans.Resource (ResourceThrow(resourceThrow), Resource)
 import Data.Bits ((.&.), (.|.))
 import Data.Maybe (maybeToList)
 import Data.Monoid (mempty, mappend, mconcat)
@@ -15,16 +17,16 @@ import Data.ByteString (ByteString)
 import Data.ByteString.Char8 ()
 import Data.Digest.Pure.SHA (bytestringDigest, sha1)
 import Data.Int (Int64)
-import Data.Enumerator ((=$))
+import Data.Conduit ((=$=))
 import qualified Blaze.ByteString.Builder as B
 import qualified Data.Attoparsec as A
-import qualified Data.Attoparsec.Enumerator as A
+import qualified Data.Conduit.Attoparsec as A
 import qualified Data.ByteString.Base64 as B64
 import qualified Data.ByteString.Char8 as BC
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.CaseInsensitive as CI
-import qualified Data.Enumerator as E
-import qualified Data.Enumerator.List as EL
+import qualified Data.Conduit as C
+import qualified Data.Conduit.List as CL
 
 import Network.WebSockets.Handshake.Http
 import Network.WebSockets.Protocol
@@ -37,7 +39,7 @@ data Hybi10_ = Hybi10_
 instance Protocol Hybi10_ where
     version         Hybi10_ = "hybi10"
     headerVersions  Hybi10_ = ["13", "8", "7"]
-    encodeMessages  Hybi10_ = EL.map encodeMessageHybi10
+    encodeMessages  Hybi10_ = CL.map encodeMessageHybi10
     decodeMessages  Hybi10_ = decodeMessagesHybi10
     finishRequest   Hybi10_ = handshakeHybi10
     implementations         = [Hybi10_]
@@ -78,14 +80,14 @@ encodeFrameHybi10 f = B.fromWord8 byte0 `mappend`
         | len' < 0x10000 = (126, B.fromWord16be (fromIntegral len'))
         | otherwise      = (127, B.fromWord64be (fromIntegral len'))
 
-decodeMessagesHybi10 :: Monad m => E.Enumeratee ByteString (Message p) m a
+decodeMessagesHybi10 :: ResourceThrow m => C.Conduit ByteString m (Message p)
 decodeMessagesHybi10 =
-    (E.sequence (A.iterParser parseFrame) =$) . demultiplexEnum
+    C.sequence (A.sinkParser parseFrame) =$= demultiplexEnum
 
-demultiplexEnum :: Monad m => E.Enumeratee Frame (Message p) m a
-demultiplexEnum = EL.concatMapAccum step emptyDemultiplexState
+demultiplexEnum :: Resource m => C.Conduit Frame m (Message p)
+demultiplexEnum = CL.concatMapAccum step emptyDemultiplexState
   where
-    step s f = let (m, s') = demultiplex s f in (s', maybeToList m)
+    step f s = let (m, s') = demultiplex s f in (s', maybeToList m)
 
 -- | Parse a frame
 parseFrame :: A.Parser Frame
@@ -131,9 +133,9 @@ parseFrame = do
         intMax :: Int64
         intMax = fromIntegral (maxBound :: Int)
 
-handshakeHybi10 :: Monad m
+handshakeHybi10 :: ResourceThrow m
                 => RequestHttpPart
-                -> E.Iteratee ByteString m Request
+                -> C.Sink ByteString m Request
 handshakeHybi10 reqHttp@(RequestHttpPart path h _) = do
     key <- getHeader "Sec-WebSocket-Key"
     let hash = unlazy $ bytestringDigest $ sha1 $ lazy $ key `mappend` guid
@@ -145,5 +147,5 @@ handshakeHybi10 reqHttp@(RequestHttpPart path h _) = do
     unlazy = mconcat . BL.toChunks
     getHeader k = case lookup k h of
         Just t  -> return t
-        Nothing -> E.throwError $ MalformedRequest reqHttp $ 
+        Nothing -> lift . resourceThrow $ MalformedRequest reqHttp $ 
             "Header missing: " ++ BC.unpack (CI.original k)

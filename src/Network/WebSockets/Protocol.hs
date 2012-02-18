@@ -13,7 +13,8 @@ module Network.WebSockets.Protocol
 
 import Blaze.ByteString.Builder (Builder)
 import qualified Data.ByteString as B
-import qualified Data.Enumerator as E
+import qualified Data.Conduit as C
+import Control.Monad.Trans.Resource (ResourceThrow, Resource)
 
 import Network.WebSockets.Types
 import Network.WebSockets.Handshake.Http
@@ -38,21 +39,21 @@ class Protocol p where
 
     -- | Encodes messages to binary 'Builder's. Takes a random source so it is
     -- able to do masking of frames (needed in some cases).
-    encodeMessages  :: Monad m
+    encodeMessages  :: (Resource m, RandomGen g)
                     => p
-                    -> E.Enumeratee (Message p) Builder m a
+                    -> C.Conduit (Message p) m Builder
 
     -- | Decodes messages from binary 'B.ByteString's.
-    decodeMessages  :: Monad m => p -> E.Enumeratee B.ByteString (Message p) m a
+    decodeMessages  :: ResourceThrow m => p -> C.Conduit B.ByteString m (Message p)
 
     -- | Parse and validate the rest of the request. For hybi10, this is just
     -- validation, but hybi00 also needs to fetch a "security token"
     --
     -- In case of failure, this function may throw a 'HandshakeError'.
     -- be amended with the RequestHttpPart for the user)
-    finishRequest   :: Monad m
+    finishRequest   :: ResourceThrow m
                     => p -> RequestHttpPart
-                    -> E.Iteratee B.ByteString m Request
+                    -> C.Sink B.ByteString m Request
 
     -- | Implementations of the specification
     implementations :: [p]

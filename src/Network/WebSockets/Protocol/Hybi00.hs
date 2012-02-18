@@ -4,8 +4,8 @@ module Network.WebSockets.Protocol.Hybi00
        , Hybi00
        ) where
 
-import Data.Enumerator ((=$))
-import Data.Enumerator.List as EL
+import Data.Conduit ((=$=))
+import qualified Data.Conduit.List as CL
 import Network.WebSockets.Protocol
 import Network.WebSockets.Protocol.Hybi00.Internal
 import Network.WebSockets.Protocol.Hybi10.Internal
@@ -17,8 +17,8 @@ instance Protocol Hybi00 where
     version        (Hybi00 p)   = version p
     headerVersions (Hybi00 p)   = headerVersions p
     supported      (Hybi00 p) h = supported p h
-    encodeMessages (Hybi00 p)   = (EL.map castMessage =$) . encodeMessages p
-    decodeMessages (Hybi00 p)   = (decodeMessages p =$) . EL.map castMessage
+    encodeMessages (Hybi00 p)   = CL.map castMessage =$= encodeMessages p
+    decodeMessages (Hybi00 p)   = decodeMessages p =$= CL.map castMessage
     finishRequest  (Hybi00 p)   = finishRequest p
     implementations             = [Hybi00 Hybi10_, Hybi00 Hybi00_]
 
