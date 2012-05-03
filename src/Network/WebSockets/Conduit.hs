@@ -7,7 +7,6 @@ module Network.WebSockets.Conduit
   , WS.Hybi00
   , WS.Hybi10
   ) where
-import System.Random (newStdGen)
 import Control.Monad.Trans (lift)
 import Control.Monad.IO.Class (liftIO)
 import Control.Exception (throwIO)
@@ -72,8 +71,7 @@ runWebSockets :: (WS.TextProtocol p, WS.WebSocketsData str)
               -> C.Sink ByteString IO ()
               -> C.ResourceT IO ()
 runWebSockets p opts app src snk = do
-    gen <- liftIO newStdGen
-    let msgSink = WS.encodeMessages p gen =$ autoFlush =$ builderToByteString =$ snk
+    let msgSink = WS.encodeMessages p =$ autoFlush =$ builderToByteString =$ snk
     sharedSink <- liftIO $ newSharedSink msgSink
     let src' = src $= WS.decodeMessages p $= handleControlMessage opts sharedSink
         snk' = CL.map WS.textData =$ wrapSharedSink sharedSink
@@ -95,7 +93,7 @@ intercept _ opts app req =
             | otherwise                      -> Nothing
         _                                    -> Nothing
   where
-    part = WS.RequestHttpPart (rawPathInfo req) (requestHeaders req)
+    part = WS.RequestHttpPart (rawPathInfo req) (requestHeaders req) (isSecure req)
     sendRsp conn = liftIO . connSendAll conn . B.toByteString . WS.encodeResponse
     handshake' src conn = do
         (req', p) <- (src $$ WS.handshake part) `Lifted.catch`

@@ -39,7 +39,7 @@ class Protocol p where
 
     -- | Encodes messages to binary 'Builder's. Takes a random source so it is
     -- able to do masking of frames (needed in some cases).
-    encodeMessages  :: (Monad m, RandomGen g)
+    encodeMessages  :: Monad m
                     => p
                     -> C.Conduit (Message p) m Builder
 

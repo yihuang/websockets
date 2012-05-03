@@ -1,9 +1,5 @@
 Name:    websockets
-<<<<<<< HEAD
-Version: 0.6.0.2
-=======
-Version: 0.6.0.0
->>>>>>> migrate from enumerator to conduit.
+Version: 0.7.0.0
 
 Synopsis:
   A sensible and clean way to write WebSocket-capable servers in Haskell.
