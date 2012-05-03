@@ -15,7 +15,7 @@ import Network.Wai (Response(ResponseBuilder))
 
 echo :: WS.Application ByteString
 echo src snk = do
-    src $= CL.map (\x -> trace ("source:"++show x) x) $$ snk
+    src $$ snk
 
 main :: IO ()
 main = do

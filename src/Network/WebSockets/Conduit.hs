@@ -7,9 +7,7 @@ module Network.WebSockets.Conduit
   , WS.Hybi00
   , WS.Hybi10
   ) where
-import Debug.Trace
-import System.IO (stdout)
-import Control.Monad.Trans (lift)
+
 import Control.Monad.IO.Class (liftIO)
 import Control.Exception (throwIO)
 import qualified Control.Exception.Lifted as Lifted
@@ -21,7 +19,6 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as S
 import qualified Data.Conduit as C
 import qualified Data.Conduit.List as CL
-import qualified Data.Conduit.Binary as C
 import Data.Conduit.Blaze (builderToByteString)
 import qualified Blaze.ByteString.Builder as B
 import Data.Conduit.SharedSink (SharedSink, newSharedSink, wrapSharedSink, pushSharedSink)
@@ -42,16 +39,16 @@ data WebSocketsOptions = WebSocketsOptions
     { onPong       :: IO ()
     }
 
-connSink :: Connection -> C.Sink ByteString IO ()
+connSink :: Connection -> C.Sink ByteString (C.ResourceT IO) ()
 connSink conn = sink
   where
     sink = C.NeedInput push close
-    push x = lift (trace ("sink:" ++ show x) $ connSendAll conn x) >> sink
+    push x = liftIO (connSendAll conn x) >> sink
     close = return ()
 
 handleControlMessage :: (WS.TextProtocol p, WS.WebSocketsData str)
                      => WebSocketsOptions
-                     -> SharedSink (WS.Message p) IO
+                     -> SharedSink (WS.Message p) (C.ResourceT IO)
                      -> C.Conduit (WS.Message p) (C.ResourceT IO) str
 handleControlMessage opt sharedSink = CL.concatMapM step
   where step msg = case msg of
@@ -61,7 +58,7 @@ handleControlMessage opt sharedSink = CL.concatMapM step
             (WS.ControlMessage cm) -> case cm of
                 WS.Close _ -> liftIO $ throwIO WS.ConnectionClosed
                 WS.Pong _ -> liftIO (onPong opt) >> return []
-                WS.Ping pl -> liftIO (pushSharedSink sharedSink (Unsafe.pong pl)) >> return []
+                WS.Ping pl -> pushSharedSink sharedSink (Unsafe.pong pl) >> return []
 
 autoFlush :: Monad m => C.Conduit B.Builder m B.Builder
 autoFlush = CL.map (`mappend` B.flush)
@@ -71,16 +68,16 @@ runWebSockets :: (WS.TextProtocol p, WS.WebSocketsData str)
               -> WebSocketsOptions
               -> Application str
               -> C.Source (C.ResourceT IO) ByteString
-              -> C.Sink ByteString IO ()
+              -> C.Sink ByteString (C.ResourceT IO) ()
               -> C.ResourceT IO ()
 runWebSockets p opts app src snk = do
+    -- let msgSink = WS.encodeMessages p =$ autoFlush =$ builderToByteString =$ snk
     let msgSink = WS.encodeMessages p =$ autoFlush =$ builderToByteString =$ snk
-    sharedSink <- liftIO $ newSharedSink msgSink
+    sharedSink <- newSharedSink msgSink
     let src' = src $= WS.decodeMessages p $= handleControlMessage opts sharedSink
         snk' = CL.map WS.textData =$ wrapSharedSink sharedSink
-    liftIO $ putStrLn "trace0"
+    --pushSharedSink sharedSink (WS.textData ("aaaa"::ByteString))
     app src' snk'
-    liftIO $ putStrLn "trace1"
 
 intercept :: forall p str. (WS.TextProtocol p, WS.WebSocketsData str)
           => p
@@ -95,7 +92,6 @@ intercept _ opts app req =
                 Just $ \src conn -> do
                     (src', req', (p::p)) <- handshake' src conn
                     liftIO $ putStrLn $ WS.version p
-                    -- src' C.$$ C.sinkHandle stdout
                     runWebSockets p opts (app req') src' (connSink conn)
             | otherwise                      -> Nothing
         _                                    -> Nothing
