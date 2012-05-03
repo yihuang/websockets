@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, ScopedTypeVariables #-}
 import Data.ByteString (ByteString)
 import qualified Blaze.ByteString.Builder as B
-import Data.Conduit ( ($$) )
+import Data.Conduit ( ($$), runResourceT )
 import qualified Data.Conduit.Network as Net
 import Control.Concurrent (forkIO)
 
@@ -15,9 +15,10 @@ echo src snk = src $$ snk
 
 main :: IO ()
 main = do
-    forkIO $ Net.runTCPServer 
-                (Net.ServerSettings 3001 Nothing)
-                echo
+    forkIO $ runResourceT $
+        Net.runTCPServer
+            (Net.ServerSettings 3001 Net.HostAny)
+            echo
     runSettings defaultSettings
          { settingsPort = 3000
          , settingsIntercept = intercept (undefined::WS.Hybi00) (WebSocketsOptions (return ())) (const echo)

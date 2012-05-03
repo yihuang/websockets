@@ -7,7 +7,7 @@ module Network.WebSockets.Handshake
     ) where
 
 import Control.Monad.Trans (lift)
-import Control.Monad.Trans.Resource (ResourceThrow(resourceThrow))
+import Control.Monad.Trans.Resource (MonadThrow(monadThrow))
 
 import Data.List (find)
 import qualified Data.ByteString as B
@@ -18,11 +18,11 @@ import Network.WebSockets.Protocol
 
 -- | Receives and checks the client handshake. If no suitable protocol is found
 -- (or the client sends garbage), a 'HandshakeError' will be thrown.
-handshake :: (ResourceThrow m, Protocol p)
+handshake :: (MonadThrow m, Protocol p)
           => RequestHttpPart
           -> C.Sink B.ByteString m (Request, p)
 handshake rhp = case find (flip supported rhp) implementations of
-    Nothing -> lift $ resourceThrow NotSupported
+    Nothing -> lift $ monadThrow NotSupported
     Just p  -> do
         rq <- finishRequest p rhp
         return (rq, p)

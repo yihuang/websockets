@@ -6,7 +6,7 @@ module Network.WebSockets.Protocol.Hybi10.Internal
 
 import Control.Applicative (pure, (<$>))
 import Control.Monad.Trans (lift)
-import Control.Monad.Trans.Resource (ResourceThrow(resourceThrow), Resource)
+import Control.Monad.Trans.Resource (MonadThrow(monadThrow))
 import Data.Bits ((.&.), (.|.))
 import Data.Maybe (maybeToList)
 import Data.Monoid (mempty, mappend, mconcat)
@@ -80,11 +80,11 @@ encodeFrameHybi10 f = B.fromWord8 byte0 `mappend`
         | len' < 0x10000 = (126, B.fromWord16be (fromIntegral len'))
         | otherwise      = (127, B.fromWord64be (fromIntegral len'))
 
-decodeMessagesHybi10 :: ResourceThrow m => C.Conduit ByteString m (Message p)
+decodeMessagesHybi10 :: MonadThrow m => C.Conduit ByteString m (Message p)
 decodeMessagesHybi10 =
     C.sequence (A.sinkParser parseFrame) =$= demultiplexEnum
 
-demultiplexEnum :: Resource m => C.Conduit Frame m (Message p)
+demultiplexEnum :: Monad m => C.Conduit Frame m (Message p)
 demultiplexEnum = CL.concatMapAccum step emptyDemultiplexState
   where
     step f s = let (m, s') = demultiplex s f in (s', maybeToList m)
@@ -133,7 +133,7 @@ parseFrame = do
         intMax :: Int64
         intMax = fromIntegral (maxBound :: Int)
 
-handshakeHybi10 :: ResourceThrow m
+handshakeHybi10 :: MonadThrow m
                 => RequestHttpPart
                 -> C.Sink ByteString m Request
 handshakeHybi10 reqHttp@(RequestHttpPart path h _) = do
@@ -147,5 +147,5 @@ handshakeHybi10 reqHttp@(RequestHttpPart path h _) = do
     unlazy = mconcat . BL.toChunks
     getHeader k = case lookup k h of
         Just t  -> return t
-        Nothing -> lift . resourceThrow $ MalformedRequest reqHttp $ 
+        Nothing -> lift . monadThrow $ MalformedRequest reqHttp $ 
             "Header missing: " ++ BC.unpack (CI.original k)

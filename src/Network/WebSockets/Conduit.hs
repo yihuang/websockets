@@ -8,6 +8,7 @@ module Network.WebSockets.Conduit
   , WS.Hybi10
   ) where
 import System.Random (newStdGen)
+import Control.Monad.Trans (lift)
 import Control.Monad.IO.Class (liftIO)
 import Control.Exception (throwIO)
 import qualified Control.Exception.Lifted as Lifted
@@ -33,31 +34,32 @@ import qualified Network.WebSockets.Protocol.Hybi10 as WS
 import qualified Network.WebSockets.Protocol.Hybi00 as WS
 import qualified Network.WebSockets.Protocol.Unsafe as Unsafe
 
-type Application str = C.Source IO str -> C.Sink str IO () -> C.ResourceT IO ()
+type Application str = C.Source (C.ResourceT IO) str -> C.Sink str (C.ResourceT IO) () -> C.ResourceT IO ()
 
 data WebSocketsOptions = WebSocketsOptions
     { onPong       :: IO ()
     }
 
 connSink :: Connection -> C.Sink ByteString IO ()
-connSink conn = C.SinkData push close
+connSink conn = sink
   where
-    push x = liftIO (connSendAll conn x) >> return (C.Processing push close)
+    sink = C.NeedInput push close
+    push x = lift (connSendAll conn x) >> sink
     close = return ()
 
 handleControlMessage :: (WS.TextProtocol p, WS.WebSocketsData str)
                      => WebSocketsOptions
                      -> SharedSink (WS.Message p) IO
-                     -> C.Conduit (WS.Message p) IO str
+                     -> C.Conduit (WS.Message p) (C.ResourceT IO) str
 handleControlMessage opt sharedSink = CL.concatMapM step
   where step msg = case msg of
             (WS.DataMessage am) -> return . (:[]) $ case am of
                 WS.Text s -> WS.fromLazyByteString s
                 WS.Binary s -> WS.fromLazyByteString s
             (WS.ControlMessage cm) -> case cm of
-                WS.Close _ -> throwIO WS.ConnectionClosed
-                WS.Pong _ -> onPong opt >> return []
-                WS.Ping pl -> pushSharedSink sharedSink (Unsafe.pong pl) >> return []
+                WS.Close _ -> liftIO $ throwIO WS.ConnectionClosed
+                WS.Pong _ -> liftIO (onPong opt) >> return []
+                WS.Ping pl -> liftIO (pushSharedSink sharedSink (Unsafe.pong pl)) >> return []
 
 autoFlush :: Monad m => C.Conduit B.Builder m B.Builder
 autoFlush = CL.map (`mappend` B.flush)
@@ -66,7 +68,7 @@ runWebSockets :: (WS.TextProtocol p, WS.WebSocketsData str)
               => p
               -> WebSocketsOptions
               -> Application str
-              -> C.BufferedSource IO ByteString
+              -> C.Source (C.ResourceT IO) ByteString
               -> C.Sink ByteString IO ()
               -> C.ResourceT IO ()
 runWebSockets p opts app src snk = do
@@ -82,7 +84,7 @@ intercept :: forall p str. (WS.TextProtocol p, WS.WebSocketsData str)
           -> WebSocketsOptions
           -> (WS.Request -> Application str)
           -> Request
-          -> Maybe (C.BufferedSource IO ByteString -> Connection -> C.ResourceT IO ())
+          -> Maybe (C.Source (C.ResourceT IO) S.ByteString -> Connection -> C.ResourceT IO ())
 intercept _ opts app req =
     case lookup "upgrade" (requestHeaders req) of
         Just s

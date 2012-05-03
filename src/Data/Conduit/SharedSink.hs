@@ -6,7 +6,7 @@ module Data.Conduit.SharedSink
   , wrapSharedSink
   ) where
 
-import Control.Monad.Trans (lift)
+import Control.Monad.IO.Class (liftIO)
 import Control.Concurrent.MVar (MVar, newMVar, modifyMVar_)
 import Control.Exception (Exception, throwIO)
 import Data.Typeable (Typeable)
@@ -32,16 +32,12 @@ newSharedSink snk = fmap SharedSink $ newMVar snk
 pushSharedSink :: SharedSink a IO -> a -> IO ()
 pushSharedSink (SharedSink snk) a = modifyMVar_ snk go
   where
-    go (SinkData push _) = do
-        r <- runResourceT $ push a
-        case r of
-            Processing push' close' -> return $ SinkData push' close'
-            Done _ _ -> throwIO SharedSinkClosed
-    go s = return s
+    go (NeedInput push _) = return (push a)
+    go _ = throwIO SharedSinkClosed
 
 -- | Wrap a `SharedSink' as a normal sink.
-wrapSharedSink :: SharedSink a IO -> Sink a IO ()
-wrapSharedSink snk = SinkData push close
+wrapSharedSink :: SharedSink a IO -> Sink a (ResourceT IO) ()
+wrapSharedSink snk = NeedInput push close
   where
-    push a = lift (pushSharedSink snk a) >> return (Processing push close)
+    push a = liftIO (pushSharedSink snk a) >> wrapSharedSink snk
     close = return ()

@@ -6,7 +6,7 @@ module Network.WebSockets.Protocol.Hybi00.Internal
 
 import Control.Applicative ((<|>))
 import Control.Monad.Trans (lift)
-import Control.Monad.Trans.Resource ( ResourceThrow(resourceThrow) )
+import Control.Monad.Trans.Resource ( MonadThrow(monadThrow) )
 import Data.Char (isDigit)
 
 import Data.Binary (encode)
@@ -69,7 +69,7 @@ divBySpaces str
     number = read $ filter isDigit str :: Integer
     spaces = fromIntegral . length $ filter (== ' ') str
 
-handshakeHybi00 :: ResourceThrow m
+handshakeHybi00 :: MonadThrow m
                 => RequestHttpPart
                 -> C.Sink B.ByteString m Request
 handshakeHybi00 reqHttp@(RequestHttpPart path h isSecure) = do
@@ -94,10 +94,10 @@ handshakeHybi00 reqHttp@(RequestHttpPart path h isSecure) = do
   where
     getHeader k = case lookup k h of
         Just t  -> return t
-        Nothing -> lift . resourceThrow $ MalformedRequest reqHttp $
+        Nothing -> lift . monadThrow $ MalformedRequest reqHttp $
             "Header missing: " ++ BC.unpack (CI.original k)
 
     numberFromToken token = case divBySpaces (BC.unpack token) of
         Just n  -> return $ encode n
-        Nothing -> lift . resourceThrow $ MalformedRequest reqHttp
+        Nothing -> lift . monadThrow $ MalformedRequest reqHttp
             "Security token does not contain enough spaces"
