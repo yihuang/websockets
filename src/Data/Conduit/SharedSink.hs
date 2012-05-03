@@ -28,12 +28,15 @@ instance Exception SharedSinkClosed
 newSharedSink :: Sink a m () -> IO (SharedSink a m)
 newSharedSink snk = fmap SharedSink $ newMVar snk
 
+sinkPush :: i -> Sink i IO r -> IO (Sink i IO r)
+sinkPush i (NeedInput p _) = return $ p i
+sinkPush i (PipeM mp _) = mp
+sinkPush i (HaveOutput _ _ _) = error "impossible: Sink HaveOutput"
+sinkPush i (Done _ _) = throwIO SharedSinkClosed
+
 -- | run a step of the sink, save the new state of sink in the `MVar'.
 pushSharedSink :: SharedSink a IO -> a -> IO ()
-pushSharedSink (SharedSink snk) a = modifyMVar_ snk go
-  where
-    go (NeedInput push _) = return (push a)
-    go _ = throwIO SharedSinkClosed
+pushSharedSink (SharedSink snk) a = modifyMVar_ snk (sinkPush a)
 
 -- | Wrap a `SharedSink' as a normal sink.
 wrapSharedSink :: SharedSink a IO -> Sink a (ResourceT IO) ()

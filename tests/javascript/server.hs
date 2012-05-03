@@ -9,7 +9,7 @@ import Data.Monoid (mappend)
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy.Char8 ()
 import Data.Text (Text)
-import Data.Enumerator ((=$))
+import Data.Conduit ((=$))
 import qualified Data.Enumerator.List as EL
 import qualified Data.Text.Lazy as TL
 

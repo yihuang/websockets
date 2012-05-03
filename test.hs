@@ -1,9 +1,12 @@
 {-# LANGUAGE OverloadedStrings, ScopedTypeVariables #-}
+import Debug.Trace
 import Data.ByteString (ByteString)
 import qualified Blaze.ByteString.Builder as B
-import Data.Conduit ( ($$), runResourceT )
+import Data.Conduit ( ($$), ($=), runResourceT )
 import qualified Data.Conduit.Network as Net
+import qualified Data.Conduit.List as CL
 import Control.Concurrent (forkIO)
+import Control.Monad.IO.Class (liftIO)
 
 import Network.WebSockets.Conduit as WS
 import Network.Wai.Handler.Warp
@@ -11,7 +14,8 @@ import Network.HTTP.Types (status200)
 import Network.Wai (Response(ResponseBuilder))
 
 echo :: WS.Application ByteString
-echo src snk = src $$ snk
+echo src snk = do
+    src $= CL.map (\x -> trace ("source:"++show x) x) $$ snk
 
 main :: IO ()
 main = do

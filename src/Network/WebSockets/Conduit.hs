@@ -7,6 +7,8 @@ module Network.WebSockets.Conduit
   , WS.Hybi00
   , WS.Hybi10
   ) where
+import Debug.Trace
+import System.IO (stdout)
 import Control.Monad.Trans (lift)
 import Control.Monad.IO.Class (liftIO)
 import Control.Exception (throwIO)
@@ -14,11 +16,12 @@ import qualified Control.Exception.Lifted as Lifted
 
 import Data.Char (toLower)
 import Data.Monoid
-import Data.Conduit ( ($$), (=$), ($=) )
+import Data.Conduit ( ($$+), (=$), ($=) )
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as S
 import qualified Data.Conduit as C
 import qualified Data.Conduit.List as CL
+import qualified Data.Conduit.Binary as C
 import Data.Conduit.Blaze (builderToByteString)
 import qualified Blaze.ByteString.Builder as B
 import Data.Conduit.SharedSink (SharedSink, newSharedSink, wrapSharedSink, pushSharedSink)
@@ -43,7 +46,7 @@ connSink :: Connection -> C.Sink ByteString IO ()
 connSink conn = sink
   where
     sink = C.NeedInput push close
-    push x = lift (connSendAll conn x) >> sink
+    push x = lift (trace ("sink:" ++ show x) $ connSendAll conn x) >> sink
     close = return ()
 
 handleControlMessage :: (WS.TextProtocol p, WS.WebSocketsData str)
@@ -75,7 +78,9 @@ runWebSockets p opts app src snk = do
     sharedSink <- liftIO $ newSharedSink msgSink
     let src' = src $= WS.decodeMessages p $= handleControlMessage opts sharedSink
         snk' = CL.map WS.textData =$ wrapSharedSink sharedSink
+    liftIO $ putStrLn "trace0"
     app src' snk'
+    liftIO $ putStrLn "trace1"
 
 intercept :: forall p str. (WS.TextProtocol p, WS.WebSocketsData str)
           => p
@@ -88,17 +93,18 @@ intercept _ opts app req =
         Just s
             | S.map toLower s == "websocket" ->
                 Just $ \src conn -> do
-                    (req', (p::p)) <- handshake' src conn
-                    runWebSockets p opts (app req') src (connSink conn)
+                    (src', req', (p::p)) <- handshake' src conn
+                    liftIO $ putStrLn $ WS.version p
+                    -- src' C.$$ C.sinkHandle stdout
+                    runWebSockets p opts (app req') src' (connSink conn)
             | otherwise                      -> Nothing
         _                                    -> Nothing
   where
     part = WS.RequestHttpPart (rawPathInfo req) (requestHeaders req) (isSecure req)
     sendRsp conn = liftIO . connSendAll conn . B.toByteString . WS.encodeResponse
     handshake' src conn = do
-        (req', p) <- (src $$ WS.handshake part) `Lifted.catch`
-                       (\e -> do sendRsp conn $ WS.responseError (undefined::p) e
-                                 Lifted.throwIO e
-                       )
+        (src', (req', p)) <- (src $$+ WS.handshake part) `Lifted.catch`
+                                   ( \e -> do sendRsp conn $ WS.responseError (undefined::p) e
+                                              Lifted.throwIO e )
         sendRsp conn $ WS.requestResponse req'
-        return (req', p)
+        return (src', req', p)
