@@ -45,6 +45,8 @@ Library
 
   Exposed-modules:
     Network.WebSockets.Conduit
+    Network.WebSockets.Monad
+    Network.WebSockets.Types
 
   Other-modules:
     Network.WebSockets.Handshake
@@ -57,8 +59,6 @@ Library
     Network.WebSockets.Protocol.Hybi10.Internal
     Network.WebSockets.Protocol.Hybi10.Mask
     Network.WebSockets.Protocol.Unsafe
-    Network.WebSockets.Types
-    Data.Conduit.SharedSink
 
   Build-depends:
     attoparsec               >= 0.9    && < 0.11,
