@@ -1,4 +1,13 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving, StandaloneDeriving, DeriveDataTypeable #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving
+           , StandaloneDeriving
+           , DeriveDataTypeable
+           , MultiParamTypeClasses
+           , FlexibleInstances
+           , FlexibleContexts
+           , UndecidableInstances
+           , TypeFamilies
+           , ScopedTypeVariables
+  #-}
 module Network.WebSockets.Monad 
   ( ServerT(..)
   , Server
@@ -14,7 +23,6 @@ module Network.WebSockets.Monad
   ) where
 
 import qualified Data.Conduit           as C
-import qualified Data.Conduit.Internal  as C
 import qualified Data.Conduit.List      as CL
 import Data.Conduit.Network     (Application)
 
@@ -25,9 +33,12 @@ import qualified Data.Text.Encoding as T
 
 import Control.Applicative      (Applicative)
 import Control.Exception        (Exception)
+import Control.Monad            (liftM)
 import Control.Monad.Trans.State
 import Control.Monad.Trans      (MonadTrans(lift))
-import Control.Monad.IO.Class   (MonadIO(liftIO))
+import Control.Monad.Base       (MonadBase)
+import Control.Monad.Trans.Control
+import Control.Monad.IO.Class   (MonadIO)
 
 data ServerError
     = ParseError String
@@ -54,6 +65,20 @@ instance MonadTrans ServerT where
 deriving instance MonadIO m         => MonadIO (ServerT m)
 deriving instance C.MonadThrow m    => C.MonadThrow (ServerT m)
 deriving instance C.MonadResource m => C.MonadResource (ServerT m)
+deriving instance MonadBase b m    => MonadBase b (ServerT m)
+
+instance MonadBaseControl b m => MonadBaseControl b (ServerT m) where
+    newtype StM (ServerT m) a = StMServer { unStMServer :: StM (StateT (ServerState m) m) a }
+    liftBaseWith f = ServerT (liftBaseWith
+                                (\runStateTInBase ->
+                                     let runServerTInBase :: RunInBase (ServerT m) b
+                                         runServerTInBase = fmap StMServer . runStateTInBase . unServerT
+                                     in  f runServerTInBase
+                                )
+                             )
+    {-# INLINE liftBaseWith #-}
+    restoreM st    = ServerT (restoreM (unStMServer st))
+    {-# INLINE restoreM #-}
 
 runServerT :: Monad m => ServerT m () -> Application m
 runServerT ws src snk = do
