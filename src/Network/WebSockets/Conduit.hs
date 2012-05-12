@@ -21,7 +21,8 @@ import qualified Data.Conduit.Network as C
 import qualified Data.Conduit.List as CL
 import Data.Conduit.Blaze (builderToByteString)
 import qualified Blaze.ByteString.Builder as B
-import Data.Conduit.SharedSink (SharedSink, newSharedSink, wrapSharedSink, pushSharedSink)
+
+import Control.Concurrent (newMVar)
 
 import Network.Wai
 import Network.Wai.Handler.Warp (Connection(..))
@@ -37,29 +38,28 @@ data WebSocketsOptions = WebSocketsOptions
     { onPong       :: IO ()
     }
 
-connSink :: Connection -> C.Sink ByteString (C.ResourceT IO) ()
-connSink conn = sink
-  where
-    sink = C.NeedInput push close
-    push x = liftIO (connSendAll conn x) >> sink
-    close = return ()
+connSink :: Connection -> IO (C.Sink ByteString (C.ResourceT IO) ())
+connSink conn = do
+    lock <- liftIO $ newMVar ()
+    return sink
+      where
+        sink = C.NeedInput push close
+        push x = liftIO (connSendAll conn x) >> sink
+        close = return ()
 
 handleControlMessage :: (WS.TextProtocol p, WS.WebSocketsData str)
                      => WebSocketsOptions
-                     -> SharedSink (WS.Message p) (C.ResourceT IO)
+                     -> C.Sink (WS.Message p) (C.ResourceT IO) ()
                      -> C.Conduit (WS.Message p) (C.ResourceT IO) str
-handleControlMessage opt sharedSink = CL.concatMapM step
+handleControlMessage opt snk = CL.concatMapM step
   where step msg = case msg of
-            (WS.DataMessage am) -> return . (:[]) $ case am of
-                WS.Text s -> WS.fromLazyByteString s
-                WS.Binary s -> WS.fromLazyByteString s
+            (WS.DataMessage am) -> case am of
+                WS.Text s   -> return [WS.fromLazyByteString s]
+                WS.Binary s -> return [WS.fromLazyByteString s]
             (WS.ControlMessage cm) -> case cm of
-                WS.Close _ -> liftIO $ throwIO WS.ConnectionClosed
-                WS.Pong _ -> liftIO (onPong opt) >> return []
-                WS.Ping pl -> pushSharedSink sharedSink (Unsafe.pong pl) >> return []
-
-autoFlush :: Monad m => C.Conduit B.Builder m B.Builder
-autoFlush = CL.map (`mappend` B.flush)
+                WS.Close _  -> liftIO $ throwIO WS.ConnectionClosed
+                WS.Pong _   -> liftIO (onPong opt) >> return []
+                WS.Ping pl  -> C.yield (Unsafe.pong pl) C.$$ snk >> return []
 
 runWebSockets :: (WS.TextProtocol p)
               => p
@@ -69,11 +69,10 @@ runWebSockets :: (WS.TextProtocol p)
               -> C.Sink ByteString (C.ResourceT IO) ()
               -> C.ResourceT IO ()
 runWebSockets p opts app src snk = do
-    let msgSink = WS.encodeMessages p =$ autoFlush =$ builderToByteString =$ snk
-    sharedSink <- newSharedSink msgSink
-    let src' = src $= WS.decodeMessages p $= handleControlMessage opts sharedSink
-        snk' = CL.map WS.textData =$ wrapSharedSink sharedSink
-    app src' snk'
+    let snk' = WS.encodeMessages p =$ CL.map B.toByteString =$ snk
+    let src' = src $= WS.decodeMessages p $= handleControlMessage opts snk'
+        snk'' = CL.map WS.textData =$ snk'
+    app src' snk''
 
 intercept :: forall p. (WS.TextProtocol p)
           => p
@@ -87,7 +86,8 @@ intercept _ opts app req =
             | S.map toLower s == "websocket" ->
                 Just $ \src conn -> do
                     (src', req', (p::p)) <- handshake' src conn
-                    runWebSockets p opts (app req') src' (connSink conn)
+                    snk <- liftIO $ connSink conn
+                    runWebSockets p opts (app req') src' snk
             | otherwise                      -> Nothing
         _                                    -> Nothing
   where

@@ -4,7 +4,9 @@ module Network.WebSockets.Monad
   , Server
   , runServerT
   , recvBS
+  , recvWith
   , sendBS
+  , getSender
   ) where
 
 import qualified Data.Conduit           as C
@@ -22,7 +24,8 @@ import Control.Monad.Trans      (MonadTrans(lift))
 import Control.Monad.IO.Class   (MonadIO(liftIO))
 
 data ServerError
-    = ConnectionClosed              
+    = ParseError String
+    | ConnectionClosed              
     deriving (Show, Typeable)
 
 instance Exception ServerError
@@ -57,8 +60,15 @@ recvBS = do
     (src', ma) <- lift $ src C.$$+ CL.head
     ServerT $ put st{ source=src' }
     case ma of
-        Nothing -> lift $ C.monadThrow ConnectionClosed
+        Nothing -> C.monadThrow ConnectionClosed
         Just  a -> return a
+
+recvWith :: (ByteString -> Either String a) -> Server a
+recvWith p = do
+    bs <- recvBS
+    case p bs of
+        Left err -> C.monadThrow $ ParseError err
+        Right a  -> return a
 
 runPipeM :: Monad m => C.Pipe i o m r -> m (C.Pipe i o m r)
 runPipeM (C.PipeM mp _) = mp >>= runPipeM
@@ -76,3 +86,9 @@ sendBS bs = do
     let snk = sink st
     snk' <- lift $ sinkPush bs snk
     ServerT $ put st{ sink=snk' }
+
+getSender :: Monad m => ServerT m (ByteString -> m ())
+getSender = do
+    snk <- ServerT $ gets sink
+    let sender bs = C.yield bs C.$$ snk
+    return sender
