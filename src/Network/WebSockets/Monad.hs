@@ -2,11 +2,15 @@
 module Network.WebSockets.Monad 
   ( ServerT(..)
   , Server
+  , Sender
   , runServerT
   , recvBS
   , recvWith
   , sendBS
   , getSender
+
+  , recvUtf8
+  , sendUtf8
   ) where
 
 import qualified Data.Conduit           as C
@@ -16,6 +20,8 @@ import Data.Conduit.Network     (Application)
 
 import Data.Typeable            (Typeable)
 import Data.ByteString          (ByteString)
+import qualified Data.Text          as T
+import qualified Data.Text.Encoding as T
 
 import Control.Applicative      (Applicative)
 import Control.Exception        (Exception)
@@ -40,6 +46,7 @@ newtype ServerT m a = ServerT
     } deriving (Applicative, Functor, Monad)
 
 type Server = ServerT (C.ResourceT IO)
+type Sender = ByteString -> (C.ResourceT IO) ()
 
 instance MonadTrans ServerT where
     lift m = ServerT (lift m)
@@ -70,6 +77,9 @@ recvWith p = do
         Left err -> C.monadThrow $ ParseError err
         Right a  -> return a
 
+recvUtf8 :: C.MonadThrow m => ServerT m T.Text
+recvUtf8 = liftM T.decodeUtf8 recvBS
+
 runPipeM :: Monad m => C.Pipe i o m r -> m (C.Pipe i o m r)
 runPipeM (C.PipeM mp _) = mp >>= runPipeM
 runPipeM s              = return s
@@ -77,15 +87,18 @@ runPipeM s              = return s
 sinkPush :: C.MonadThrow m => i -> C.Sink i m r -> m (C.Sink i m r)
 sinkPush i (C.NeedInput p _)    = runPipeM (p i)
 sinkPush i (C.PipeM mp _)       = mp >>= sinkPush i
-sinkPush _ (C.HaveOutput _ _ _) = error "impossible: Sink HaveOutput"
+sinkPush _ (C.HaveOutput{})     = error "impossible: Sink HaveOutput"
 sinkPush _ (C.Done _ _)         = C.monadThrow ConnectionClosed
 
 sendBS :: C.MonadThrow m => ByteString -> ServerT m ()
 sendBS bs = do
-    st <- ServerT $ get
+    st <- ServerT get
     let snk = sink st
     snk' <- lift $ sinkPush bs snk
     ServerT $ put st{ sink=snk' }
+
+sendUtf8 :: C.MonadThrow m => T.Text -> ServerT m ()
+sendUtf8 = sendBS . T.encodeUtf8
 
 getSender :: Monad m => ServerT m (ByteString -> m ())
 getSender = do
