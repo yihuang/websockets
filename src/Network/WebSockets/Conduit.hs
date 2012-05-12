@@ -12,17 +12,15 @@ import Control.Exception (throwIO)
 import qualified Control.Exception.Lifted as Lifted
 
 import Data.Char (toLower)
-import Data.Monoid
 import Data.Conduit ( ($$+), (=$), ($=) )
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as S
 import qualified Data.Conduit as C
 import qualified Data.Conduit.Network as C
 import qualified Data.Conduit.List as CL
-import Data.Conduit.Blaze (builderToByteString)
 import qualified Blaze.ByteString.Builder as B
 
-import Control.Concurrent (newMVar)
+import Control.Concurrent (newMVar, withMVar)
 
 import Network.Wai
 import Network.Wai.Handler.Warp (Connection(..))
@@ -41,11 +39,11 @@ data WebSocketsOptions = WebSocketsOptions
 connSink :: Connection -> IO (C.Sink ByteString (C.ResourceT IO) ())
 connSink conn = do
     lock <- liftIO $ newMVar ()
-    return sink
-      where
-        sink = C.NeedInput push close
-        push x = liftIO (connSendAll conn x) >> sink
-        close = return ()
+    return $ sink lock
+  where
+    sink l = C.NeedInput (push l) close
+    push l x = liftIO (withMVar l (\_ -> connSendAll conn x)) >> sink l
+    close = return ()
 
 handleControlMessage :: (WS.TextProtocol p, WS.WebSocketsData str)
                      => WebSocketsOptions
